@@ -20,6 +20,7 @@ from utils.dist import init_distributed, is_distributed, is_primary, get_rank, b
 from utils.misc import my_worker_init_fn
 from utils.io import save_checkpoint, resume_if_possible
 from utils.logger import Logger
+from utils.draw_box_using_open3d import drawBox
 
 
 def make_args_parser():
@@ -101,8 +102,11 @@ def make_args_parser():
     parser.add_argument("--loss_size_weight", default=1.0, type=float)
 
     ##### Dataset #####
+    # parser.add_argument(
+    #     "--dataset_name", required=True, type=str, choices=["scannet", "sunrgbd"]
+    # )
     parser.add_argument(
-        "--dataset_name", required=True, type=str, choices=["scannet", "sunrgbd"]
+        "--dataset_name", default="sunrgbd", type=str, choices=["scannet", "sunrgbd"]
     )
     parser.add_argument(
         "--dataset_root_dir",
@@ -119,7 +123,7 @@ def make_args_parser():
               If None, default values from scannet.py/sunrgbd.py are used",
     )
     parser.add_argument("--dataset_num_workers", default=4, type=int)
-    parser.add_argument("--batchsize_per_gpu", default=8, type=int)
+    parser.add_argument("--batchsize_per_gpu", default=1, type=int)
 
     ##### Training #####
     parser.add_argument("--start_epoch", default=-1, type=int)
@@ -128,8 +132,8 @@ def make_args_parser():
     parser.add_argument("--seed", default=0, type=int)
 
     ##### Testing #####
-    parser.add_argument("--test_only", default=False, action="store_true")
-    parser.add_argument("--test_ckpt", default=None, type=str)
+    parser.add_argument("--test_only", default=True, action="store_true")
+    parser.add_argument("--test_ckpt", default="sunrgbd_ep1080.pth", type=str)
 
     ##### I/O #####
     parser.add_argument("--checkpoint_dir", default=None, type=str)
@@ -312,7 +316,7 @@ def test_model(args, model, model_no_ddp, criterion, dataset_config, dataloaders
     criterion = None  # do not compute loss for speed-up; Comment out to see test loss
     epoch = -1
     curr_iter = 0
-    ap_calculator = evaluate(
+    ap_calculator, outputs, batch_data_label = evaluate(
         args,
         epoch,
         model,
@@ -322,7 +326,41 @@ def test_model(args, model, model_no_ddp, criterion, dataset_config, dataloaders
         logger,
         curr_iter,
     )
-    metrics = ap_calculator.compute_metrics()
+    # print(f'output_shape : {outputs["outputs"]["objectness_prob"]}')
+    # print(f'batch_data_shape : {batch_data_label["point_clouds"].size()}')
+
+
+
+
+    metrics, pred_map_cls = ap_calculator.compute_metrics()
+
+    pred = {}  # map {classname: pred}
+    gt = {}  # map {classname: gt}
+
+    pred_list = {}
+    for img_id in pred_map_cls.keys():
+        for classname, bbox, score in pred_map_cls[img_id]:
+            if classname not in pred:
+                pred[classname] = {}
+            if img_id not in pred[classname]:
+                pred[classname][img_id] = []
+            # if classname not in gt:
+            #     gt[classname] = {}
+            # if img_id not in gt[classname]:
+            #     gt[classname][img_id] = []
+            pred[classname][img_id].append((bbox, score))
+
+            if score > 0.6:
+                if classname not in pred_list:
+                    pred_list[classname] = {}
+                    pred_list[classname][0] = []
+                pred_list[classname][0].append(bbox)
+
+
+    drawBox(batch_data_label["point_clouds"], pred_list, batch_data_label["gt_box_corners"])
+
+    # print(f'pred_map_cls : {pred_map_cls.shape}')
+
     metric_str = ap_calculator.metrics_to_str(metrics)
     if is_primary():
         print("==" * 10)
