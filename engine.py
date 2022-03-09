@@ -213,4 +213,4 @@ def evaluate(
             )
         logger.log_scalars(test_dict, curr_train_iter, prefix="Test/")
 
-    return ap_calculator
+    return ap_calculator, outputs, batch_data_label
