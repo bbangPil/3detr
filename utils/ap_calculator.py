@@ -392,7 +392,7 @@ class APCalculator(object):
                     rec_list.append(0)
             ret_dict["AR"] = np.mean(rec_list)
             overall_ret[ap_iou_thresh] = ret_dict
-        return overall_ret
+        return overall_ret, self.pred_map_cls
 
     def __str__(self):
         overall_ret = self.compute_metrics()
